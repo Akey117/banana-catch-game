@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banana Catch</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #DDA0DD 0%, #E6E6FA 100%);
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: black;
+            text-shadow: 2px 2px 4px rgba(255,255,255,0.5);
+            margin-bottom: 10px;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: linear-gradient(to bottom, #87CEEB 0%, #90EE90 100%);
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: transparent;
+        }
+
+        #gameInfo {
+            display: flex;
+            justify-content: space-between;
+            width: 800px;
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: black;
+        }
+
+        #startButton {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            font-size: 24px;
+            background: #FFD700;
+            border: 3px solid #FFA500;
+            border-radius: 15px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            color: #8B4513;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+        }
+
+        #startButton:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+        }
+
+        #startButton:active {
+            transform: translate(-50%, -50%) scale(0.95);
+        }
+
+        #instructions {
+            text-align: center;
+            margin-top: 15px;
+            color: black;
+            font-size: 16px;
+        }
+
+        .cloud {
+            position: absolute;
+            background: white;
+            border-radius: 50px;
+            opacity: 0.8;
+            animation: float 20s infinite linear;
+        }
+
+        .cloud:before {
+            content: '';
+            position: absolute;
+            background: white;
+            border-radius: 50px;
+        }
+
+        .cloud1 {
+            width: 80px;
+            height: 30px;
+            top: 50px;
+            left: -100px;
+        }
+
+        .cloud1:before {
+            width: 40px;
+            height: 40px;
+            top: -15px;
+            left: 15px;
+        }
+
+        .cloud2 {
+            width: 60px;
+            height: 25px;
+            top: 100px;
+            left: -80px;
+            animation-delay: -10s;
+        }
+
+        .cloud2:before {
+            width: 30px;
+            height: 30px;
+            top: -10px;
+            left: 10px;
+        }
+
+        @keyframes float {
+            from { transform: translateX(0); }
+            to { transform: translateX(900px); }
+        }
+    </style>
+</head>
+<body>
+
+    
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <button id="startButton">Start Game!</button>
+        
+        <!-- Floating clouds -->
+        <div class="cloud cloud1"></div>
+        <div class="cloud cloud2"></div>
+    </div>
+    
+    <div id="gameInfo">
+        <div>Score: <span id="score">0</span></div>
+        <div>Lives: <span id="lives">3</span></div>
+        <div>Level: <span id="level">1</span></div>
+    </div>
+    
+    <div id="instructions">
+        Use LEFT and RIGHT arrow keys or A/D keys to move the basket!<br>
+        Catch the falling bananas and avoid letting them hit the ground!<br>
+        <strong>During tree swinging: Press SPACEBAR to jump between trees!</strong>
+    </div>
+
+    <script>
+        class BananaCatchingGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.startButton = document.getElementById('startButton');
+                
+                // Game state
+                this.gameRunning = false;
+                this.score = 0;
+                this.lives = 3;
+                this.level = 1;
+                this.gameMode = 'catching'; // 'catching', 'choice', 'victory'
+                this.victoryPhase = 0; // 0: walking, 1: climbing, 2: swinging, 3: hugging, 4: dancing
+                this.animationTime = 0;
+                
+                // Game objects
+                this.monkey = {
+                    x: 300,
+                    y: 380,
+                    width: 100,
+                    height: 120,
+                    speed: 8
+                };
+                
+                this.basket = {
+                    x: 320,
+                    y: 520,
+                    width: 80,
+                    height: 40,
+                    speed: 8
+                };
+                
+                this.bananas = [];
+                this.particles = [];
+                
+                // Input handling
+                this.keys = {};
+                
+                this.init();
+            }
+            
+            init() {
+                this.startButton.addEventListener('click', () => this.startGame());
+                
+                // Keyboard events
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.key.toLowerCase()] = true;
+                    
+                    // Handle spacebar for tree swinging
+                    if (e.code === 'Space' && this.gameMode === 'victory' && (this.victoryPhase === 2 || this.victoryPhase === 3)) {
+                        e.preventDefault();
+                        this.handleTreeJump();
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.key.toLowerCase()] = false;
+                });
+                
+                this.gameLoop();
+            }
+            
+            startGame() {
+                this.gameRunning = true;
+                this.score = 0;
+                this.lives = 3;
+                this.level = 1;
+                this.bananas = [];
+                this.particles = [];
+                this.monkey.x = 300;
+                this.basket.x = 320;
+                this.startButton.style.display = 'none';
+                this.updateUI();
+            }
+            
+            spawnBanana() {
+                // Faster banana spawn rate - less waiting time
+                const spawnRate = 0.008 + (this.level * 0.002);
+                if (Math.random() < spawnRate) {
+                    this.bananas.push({
+                        x: Math.random() * (this.canvas.width - 40),
+                        y: -40,
+                        width: 40,
+                        height: 40,
+                        speed: 1 + (this.level * 0.2),
+                        rotation: 0
+                    });
+                }
+            }
+            
+            updateBasket() {
+                // Move monkey and basket together based on input
+                if ((this.keys['arrowleft'] || this.keys['a']) && this.monkey.x > 0) {
+                    this.monkey.x -= this.monkey.speed;
+                    this.basket.x = this.monkey.x + 20; // Basket follows monkey
+                }
+                if ((this.keys['arrowright'] || this.keys['d']) && this.monkey.x < this.canvas.width - this.monkey.width) {
+                    this.monkey.x += this.monkey.speed;
+                    this.basket.x = this.monkey.x + 20; // Basket follows monkey
+                }
+            }
+            
+            updateBananas() {
+                for (let i = this.bananas.length - 1; i >= 0; i--) {
+                    const banana = this.bananas[i];
+                    banana.y += banana.speed;
+                    banana.rotation += 0.1;
+                    
+                    // Check collision with basket
+                    if (banana.x < this.basket.x + this.basket.width &&
+                        banana.x + banana.width > this.basket.x &&
+                        banana.y < this.basket.y + this.basket.height &&
+                        banana.y + banana.height > this.basket.y) {
+                        
+                        // Caught banana!
+                        this.score += 10;
+                        this.createParticles(banana.x + banana.width/2, banana.y + banana.height/2, '#FFD700');
+                        this.bananas.splice(i, 1);
+                        
+                        // Check for choice at 100 points (10 bananas)
+                        if (this.score === 100) {
+                            this.showChoicePopup();
+                        }
+                        
+                        // Level up every 100 points
+                        if (this.score % 100 === 0) {
+                            this.level++;
+                        }
+                        
+                        this.updateUI();
+                        continue;
+                    }
+                    
+                    // Check if banana hit the ground
+                    if (banana.y > this.canvas.height) {
+                        this.lives--;
+                        this.createParticles(banana.x + banana.width/2, this.canvas.height - 20, '#FF6B6B');
+                        this.bananas.splice(i, 1);
+                        
+                        if (this.lives <= 0) {
+                            this.gameOver();
+                        }
+                        
+                        this.updateUI();
+                    }
+                }
+            }
+            
+            createParticles(x, y, color) {
+                for (let i = 0; i < 8; i++) {
+                    this.particles.push({
+                        x: x,
+                        y: y,
+                        vx: (Math.random() - 0.5) * 8,
+                        vy: (Math.random() - 0.5) * 8,
+                        life: 30,
+                        color: color
+                    });
+                }
+            }
+            
+            updateParticles() {
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const particle = this.particles[i];
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    particle.life--;
+                    
+                    if (particle.life <= 0) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+            
+            drawMonkey() {
+                const monkey = this.monkey;
+                
+                // Long curly hair (draw first so it's behind the head)
+                this.ctx.fillStyle = '#654321';
+                for (let i = 0; i < 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2;
+                    const curlX = monkey.x + 50 + Math.cos(angle) * 35;
+                    const curlY = monkey.y + 30 + Math.sin(angle) * 25;
+                    const curlSize = 8 + Math.sin(Date.now() * 0.01 + i) * 2;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.arc(curlX, curlY, curlSize, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Add smaller curls for more texture
+                    const smallCurlX = curlX + Math.cos(angle + 0.5) * 15;
+                    const smallCurlY = curlY + Math.sin(angle + 0.5) * 15;
+                    this.ctx.beginPath();
+                    this.ctx.arc(smallCurlX, smallCurlY, 4, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                // Body (more monkey-like)
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 70, 35, 45, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Chest (lighter color)
+                this.ctx.fillStyle = '#DEB887';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 75, 20, 30, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Head (larger and more rounded)
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 50, monkey.y + 35, 30, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Muzzle
+                this.ctx.fillStyle = '#DEB887';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 45, 15, 12, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Nostrils
+                this.ctx.fillStyle = 'black';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 47, monkey.y + 42, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 53, monkey.y + 42, 1.5, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Eyes (larger and more expressive)
+                this.ctx.fillStyle = 'white';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 42, monkey.y + 30, 6, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58, monkey.y + 30, 6, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.fillStyle = 'black';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 43, monkey.y + 30, 3, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 57, monkey.y + 30, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Eye highlights
+                this.ctx.fillStyle = 'white';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 44, monkey.y + 29, 1, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58, monkey.y + 29, 1, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Smile
+                this.ctx.strokeStyle = 'black';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 50, monkey.y + 48, 8, 0, Math.PI);
+                this.ctx.stroke();
+                
+                // Arms holding the basket
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 8;
+                
+                // Left arm
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 20, monkey.y + 60);
+                this.ctx.quadraticCurveTo(monkey.x + 10, monkey.y + 80, this.basket.x - 5, this.basket.y + 10);
+                this.ctx.stroke();
+                
+                // Right arm  
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 80, monkey.y + 60);
+                this.ctx.quadraticCurveTo(monkey.x + 90, monkey.y + 80, this.basket.x + this.basket.width + 5, this.basket.y + 10);
+                this.ctx.stroke();
+                
+                // Hands
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.arc(this.basket.x - 5, this.basket.y + 10, 8, 0, Math.PI * 2);
+                this.ctx.arc(this.basket.x + this.basket.width + 5, this.basket.y + 10, 8, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Legs
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 6;
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 35, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 30, monkey.y + 140);
+                this.ctx.moveTo(monkey.x + 65, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 70, monkey.y + 140);
+                this.ctx.stroke();
+                
+                // Feet
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 30, monkey.y + 145, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 70, monkey.y + 145, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            drawBasket() {
+                // Basket body
+                this.ctx.fillStyle = '#DEB887';
+                this.ctx.fillRect(this.basket.x, this.basket.y, this.basket.width, this.basket.height);
+                
+                // Basket weave pattern
+                this.ctx.strokeStyle = '#8B7355';
+                this.ctx.lineWidth = 2;
+                for (let i = 0; i < 4; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.basket.x, this.basket.y + (i * 10));
+                    this.ctx.lineTo(this.basket.x + this.basket.width, this.basket.y + (i * 10));
+                    this.ctx.stroke();
+                }
+                for (let i = 0; i < 8; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.basket.x + (i * 10), this.basket.y);
+                    this.ctx.lineTo(this.basket.x + (i * 10), this.basket.y + this.basket.height);
+                    this.ctx.stroke();
+                }
+            }
+            
+            drawBananas() {
+                this.bananas.forEach(banana => {
+                    this.ctx.save();
+                    this.ctx.translate(banana.x + banana.width/2, banana.y + banana.height/2);
+                    this.ctx.rotate(banana.rotation);
+                    
+                    // Banana main body (curved shape)
+                    this.ctx.fillStyle = '#FFD700';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-15, -3);
+                    this.ctx.quadraticCurveTo(-10, -8, 0, -5);
+                    this.ctx.quadraticCurveTo(10, -2, 15, 3);
+                    this.ctx.quadraticCurveTo(10, 8, 0, 5);
+                    this.ctx.quadraticCurveTo(-10, 2, -15, -3);
+                    this.ctx.fill();
+                    
+                    // Banana highlights (to make it look 3D)
+                    this.ctx.fillStyle = '#FFFF99';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-12, -1);
+                    this.ctx.quadraticCurveTo(-8, -4, 2, -2);
+                    this.ctx.quadraticCurveTo(8, 0, 12, 1);
+                    this.ctx.quadraticCurveTo(8, 3, 2, 2);
+                    this.ctx.quadraticCurveTo(-8, 0, -12, -1);
+                    this.ctx.fill();
+                    
+                    // Banana ridges (the lines on a real banana)
+                    this.ctx.strokeStyle = '#E6C200';
+                    this.ctx.lineWidth = 1;
+                    for (let i = -1; i <= 1; i++) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(-15, i * 2);
+                        this.ctx.quadraticCurveTo(0, i * 2 - 2, 15, i * 2 + 1);
+                        this.ctx.stroke();
+                    }
+                    
+                    // Banana stem (brown tip)
+                    this.ctx.fillStyle = '#8B4513';
+                    this.ctx.beginPath();
+                    this.ctx.arc(-15, -1, 3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Banana bottom tip
+                    this.ctx.fillStyle = '#654321';
+                    this.ctx.beginPath();
+                    this.ctx.arc(15, 2, 2, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    this.ctx.restore();
+                });
+            }
+            
+            drawParticles() {
+                this.particles.forEach(particle => {
+                    this.ctx.fillStyle = particle.color;
+                    this.ctx.globalAlpha = particle.life / 30;
+                    this.ctx.beginPath();
+                    this.ctx.arc(particle.x, particle.y, 3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.globalAlpha = 1;
+                });
+            }
+            
+            drawBackground() {
+                // Ground
+                this.ctx.fillStyle = '#90EE90';
+                this.ctx.fillRect(0, 550, this.canvas.width, 50);
+                
+                // Grass details
+                this.ctx.strokeStyle = '#228B22';
+                this.ctx.lineWidth = 2;
+                for (let i = 0; i < this.canvas.width; i += 20) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(i, 550);
+                    this.ctx.lineTo(i + 5, 545);
+                    this.ctx.lineTo(i + 10, 550);
+                    this.ctx.stroke();
+                }
+            }
+            
+            showChoicePopup() {
+                this.gameRunning = false;
+                this.gameMode = 'choice';
+                
+                // Create choice popup
+                const choiceDiv = document.createElement('div');
+                choiceDiv.id = 'choicePopup';
+                choiceDiv.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: white;
+                    padding: 30px;
+                    border: 4px solid #8B4513;
+                    border-radius: 20px;
+                    text-align: center;
+                    z-index: 10000;
+                    font-family: 'Comic Sans MS', cursive, sans-serif;
+                    box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+                `;
+                
+                choiceDiv.innerHTML = `
+                    <h2 style="color: #8B4513; margin-bottom: 20px;">🎉 Amazing! You caught 10 bananas! 🍌</h2>
+                    <p style="color: black; font-size: 18px; margin-bottom: 30px;">What would you like to do?</p>
+                    <button id="continueBtn" style="
+                        background: #4CAF50;
+                        color: white;
+                        border: none;
+                        padding: 15px 30px;
+                        margin: 10px;
+                        border-radius: 10px;
+                        font-size: 18px;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Keep Playing</button>
+                    <button id="victoryBtn" style="
+                        background: #FFD700;
+                        color: #8B4513;
+                        border: 3px solid #FFA500;
+                        padding: 15px 30px;
+                        margin: 10px;
+                        border-radius: 10px;
+                        font-size: 18px;
+                        cursor: pointer;
+                        font-family: inherit;
+                        font-weight: bold;
+                    ">Go to Victory Dance! 🌟</button>
+                `;
+                
+                document.body.appendChild(choiceDiv);
+                
+                // Add event listeners
+                document.getElementById('continueBtn').addEventListener('click', () => {
+                    document.body.removeChild(choiceDiv);
+                    this.gameRunning = true;
+                    this.gameMode = 'catching';
+                });
+                
+                document.getElementById('victoryBtn').addEventListener('click', () => {
+                    document.body.removeChild(choiceDiv);
+                    this.startVictorySequence();
+                });
+            }
+            
+            startVictorySequence() {
+                this.gameMode = 'victory';
+                this.victoryPhase = 0; // Start with walking
+                this.animationTime = 0;
+                this.monkey.x = 50; // Start from left side
+                this.monkey.y = 450; // Put monkey on ground
+                this.bananas = []; // Clear all bananas
+            }
+            
+            handleTreeJump() {
+                // Handle spacebar jumping between trees during swinging phases
+                if (this.victoryPhase === 2) {
+                    // Jump from first tree to second tree
+                    this.victoryPhase = 3;
+                    this.animationTime = 0;
+                    this.createParticles(this.monkey.x + 50, this.monkey.y + 50, '#90EE90'); // Green particles for jump
+                } else if (this.victoryPhase === 3) {
+                    // Jump from second tree to third tree (with giant banana)
+                    this.victoryPhase = 4;
+                    this.animationTime = 0;
+                    this.createParticles(this.monkey.x + 50, this.monkey.y + 50, '#FFD700'); // Gold particles for final jump
+                }
+            }
+            
+            gameOver() {
+                this.gameRunning = false;
+                this.startButton.textContent = `Game Over! Score: ${this.score} - Play Again?`;
+                this.startButton.style.display = 'block';
+            }
+            
+            updateUI() {
+                document.getElementById('score').textContent = this.score;
+                document.getElementById('lives').textContent = this.lives;
+                document.getElementById('level').textContent = this.level;
+            }
+            
+            updateVictorySequence() {
+                this.animationTime += 1;
+                
+                switch (this.victoryPhase) {
+                    case 0: // Walking to the right to reach trees
+                        this.monkey.x += 3;
+                        // Walking animation - slight bounce
+                        this.monkey.y = 450 + Math.sin(this.animationTime * 0.2) * 5;
+                        if (this.monkey.x > 130) { // Near first tree
+                            this.victoryPhase = 1;
+                            this.animationTime = 0;
+                        }
+                        break;
+                        
+                    case 1: // Running and jumping to first tree
+                        this.monkey.x += 2;
+                        this.monkey.y -= 3; // Jump up to tree
+                        if (this.animationTime > 40) { // Reached first tree
+                            this.monkey.x = 167; // Position at first tree
+                            this.monkey.y = 280; // In the tree
+                            this.victoryPhase = 2;
+                            this.animationTime = 0;
+                        }
+                        break;
+                        
+                    case 2: // Swinging with arms from tree 1 to tree 2
+                        // Swinging motion from tree 1 to tree 2 - arms extended
+                        const progress2 = this.animationTime / 60;
+                        this.monkey.x = 167 + (370 - 167) * progress2; // From tree 1 to tree 2
+                        this.monkey.y = 280 - Math.sin(progress2 * Math.PI) * 40; // Swinging arc
+                        
+                        // Draw swinging arms during this phase
+                        this.drawSwingingArms(progress2, 167, 370);
+                        
+                        if (this.animationTime > 60) {
+                            this.monkey.x = 370; // Position at second tree
+                            this.monkey.y = 260; // In the tree
+                            this.victoryPhase = 3;
+                            this.animationTime = 0;
+                        }
+                        break;
+                        
+                    case 3: // Swinging with arms from tree 2 to tree 3 (giant banana tree)
+                        // Swinging motion from tree 2 to tree 3
+                        const progress3 = this.animationTime / 80;
+                        this.monkey.x = 370 + (602 - 370) * progress3; // From tree 2 to tree 3
+                        this.monkey.y = 260 - Math.sin(progress3 * Math.PI) * 50; // Higher swinging arc
+                        
+                        // Draw swinging arms during this phase
+                        this.drawSwingingArms(progress3, 370, 602);
+                        
+                        if (this.animationTime > 80) {
+                            this.monkey.x = 602; // Position at third tree
+                            this.monkey.y = 240; // In the tree with banana
+                            this.victoryPhase = 4;
+                            this.animationTime = 0;
+                        }
+                        break;
+                        
+                    case 4: // Falling down with banana and celebrating
+                        if (this.animationTime < 60) {
+                            // Falling down with banana
+                            this.monkey.y += 4; // Fall down
+                            if (this.monkey.y > 400) {
+                                this.monkey.y = 400; // Land on ground
+                            }
+                        } else {
+                            // Start raining bananas after landing
+                            this.spawnRainingBananas();
+                        }
+                        break;
+                }
+            }
+            
+            spawnRainingBananas() {
+                // Create raining bananas effect
+                if (Math.random() < 0.3) { // 30% chance each frame
+                    this.bananas.push({
+                        x: Math.random() * this.canvas.width,
+                        y: -40,
+                        width: 30,
+                        height: 30,
+                        speed: 2 + Math.random() * 3,
+                        rotation: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+            
+            drawVictorySequence() {
+                // Draw trees
+                this.drawTrees();
+                
+                // Draw monkey in victory sequence
+                if (this.victoryPhase === 4) {
+                    this.drawDancingMonkey();
+                    this.drawGiantBanana();
+                } else {
+                    this.drawVictoryMonkey();
+                }
+            }
+            
+            drawTrees() {
+                // Tree 1 - Banana tree with bananas hanging by leaves
+                this.ctx.fillStyle = '#654321';
+                this.ctx.fillRect(150, 320, 35, 230);
+                // Tree bark texture
+                this.ctx.strokeStyle = '#4A4A4A';
+                this.ctx.lineWidth = 2;
+                for (let i = 0; i < 8; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(150, 330 + i * 25);
+                    this.ctx.lineTo(185, 335 + i * 25);
+                    this.ctx.stroke();
+                }
+                
+                // Banana tree leaves (large palm-like leaves)
+                this.ctx.fillStyle = '#228B22';
+                this.ctx.strokeStyle = '#1F5F1F';
+                this.ctx.lineWidth = 3;
+                
+                // Draw banana leaves radiating from center
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const leafLength = 60;
+                    const leafWidth = 15;
+                    
+                    this.ctx.save();
+                    this.ctx.translate(167, 320);
+                    this.ctx.rotate(angle);
+                    
+                    // Leaf shape
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(leafLength/2, 0, leafLength/2, leafWidth/2, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    this.ctx.restore();
+                }
+                
+                // Bananas hanging by leaves from tree 1
+                this.drawHangingBananas(167, 300, 4, 1);
+                
+                // Tree 2 - Middle banana tree with bananas hanging by leaves
+                this.ctx.fillStyle = '#654321';
+                this.ctx.fillRect(350, 300, 40, 250);
+                // Tree bark texture
+                for (let i = 0; i < 9; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(350, 310 + i * 25);
+                    this.ctx.lineTo(390, 315 + i * 25);
+                    this.ctx.stroke();
+                }
+                
+                // Banana tree leaves for tree 2
+                this.ctx.fillStyle = '#228B22';
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const leafLength = 65;
+                    const leafWidth = 18;
+                    
+                    this.ctx.save();
+                    this.ctx.translate(370, 300);
+                    this.ctx.rotate(angle);
+                    
+                    // Leaf shape
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(leafLength/2, 0, leafLength/2, leafWidth/2, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    this.ctx.restore();
+                }
+                
+                // Bananas hanging by leaves from tree 2
+                this.drawHangingBananas(370, 280, 5, 1.2);
+                
+                // Tree 3 - Final banana tree (with GIANT bananas)
+                this.ctx.fillStyle = '#654321';
+                this.ctx.fillRect(580, 280, 45, 270);
+                // Tree bark texture
+                for (let i = 0; i < 10; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(580, 290 + i * 25);
+                    this.ctx.lineTo(625, 295 + i * 25);
+                    this.ctx.stroke();
+                }
+                
+                // Banana tree leaves for tree 3 (biggest)
+                this.ctx.fillStyle = '#228B22';
+                for (let i = 0; i < 10; i++) {
+                    const angle = (i / 10) * Math.PI * 2;
+                    const leafLength = 70;
+                    const leafWidth = 20;
+                    
+                    this.ctx.save();
+                    this.ctx.translate(602, 280);
+                    this.ctx.rotate(angle);
+                    
+                    // Leaf shape
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(leafLength/2, 0, leafLength/2, leafWidth/2, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    this.ctx.restore();
+                }
+                
+                // GIANT bananas hanging from tree 3 (much bigger!)
+                if (this.victoryPhase >= 3) {
+                    this.drawHangingBananas(602, 260, 3, 3.5); // GIANT bananas!
+                }
+            }
+            
+            drawHangingBananas(x, y, count, scale) {
+                // Draw bananas hanging by leaves from the tree
+                for (let i = 0; i < count; i++) {
+                    const bananaX = x + (i - count/2) * (15 * scale);
+                    const bananaY = y + 20 + i * (5 * scale);
+                    const swayOffset = Math.sin(Date.now() * 0.003 + i) * (3 * scale);
+                    
+                    // Draw leaf stem connecting banana to tree
+                    this.ctx.strokeStyle = '#228B22';
+                    this.ctx.lineWidth = 2 * scale;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, y);
+                    this.ctx.quadraticCurveTo(x + swayOffset, y + 10 * scale, bananaX + swayOffset, bananaY - 5 * scale);
+                    this.ctx.stroke();
+                    
+                    // Draw small leaf at connection point
+                    this.ctx.fillStyle = '#32CD32';
+                    this.ctx.save();
+                    this.ctx.translate(bananaX + swayOffset, bananaY - 5 * scale);
+                    this.ctx.scale(scale * 0.8, scale * 0.8);
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(0, -3, 8, 3, Math.PI * 0.1, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.restore();
+                    
+                    // Draw banana hanging from leaf
+                    this.ctx.save();
+                    this.ctx.translate(bananaX + swayOffset, bananaY);
+                    this.ctx.scale(scale, scale);
+                    
+                    // Banana main body
+                    this.ctx.fillStyle = '#FFD700';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-8, -2);
+                    this.ctx.quadraticCurveTo(-5, -4, 0, -3);
+                    this.ctx.quadraticCurveTo(5, -1, 8, 2);
+                    this.ctx.quadraticCurveTo(5, 4, 0, 3);
+                    this.ctx.quadraticCurveTo(-5, 1, -8, -2);
+                    this.ctx.fill();
+                    
+                    // Banana highlights
+                    this.ctx.fillStyle = '#FFFF99';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-6, -1);
+                    this.ctx.quadraticCurveTo(-3, -2, 1, -1);
+                    this.ctx.quadraticCurveTo(4, 0, 6, 1);
+                    this.ctx.quadraticCurveTo(4, 2, 1, 1);
+                    this.ctx.quadraticCurveTo(-3, 0, -6, -1);
+                    this.ctx.fill();
+                    
+                    // Banana ridges
+                    this.ctx.strokeStyle = '#E6C200';
+                    this.ctx.lineWidth = 0.5;
+                    for (let j = -1; j <= 1; j++) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(-8, j);
+                        this.ctx.quadraticCurveTo(0, j - 1, 8, j + 0.5);
+                        this.ctx.stroke();
+                    }
+                    
+                    // Banana stem
+                    this.ctx.fillStyle = '#8B4513';
+                    this.ctx.beginPath();
+                    this.ctx.arc(-8, -1, 1.5, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Banana tip
+                    this.ctx.fillStyle = '#654321';
+                    this.ctx.beginPath();
+                    this.ctx.arc(8, 1, 1, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    this.ctx.restore();
+                }
+            }
+            
+            drawSwingingArms(progress, startTreeX, endTreeX) {
+                // Draw realistic arm swinging - one arm stays on tree while other reaches
+                const monkey = this.monkey;
+                
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 10;
+                
+                if (progress < 0.5) {
+                    // First half: Left arm stays on start tree, right arm reaches for end tree
+                    
+                    // Left arm holding current tree (stays put)
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(monkey.x + 20, monkey.y + 60);
+                    this.ctx.quadraticCurveTo(monkey.x - 10, monkey.y + 40, startTreeX, monkey.y - 20);
+                    this.ctx.stroke();
+                    
+                    // Right arm reaching for next tree
+                    const reachProgress = progress * 2; // 0 to 1 for first half
+                    const reachX = monkey.x + 80 + (endTreeX - (monkey.x + 80)) * reachProgress;
+                    const reachY = monkey.y + 60 - Math.sin(reachProgress * Math.PI) * 40;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(monkey.x + 80, monkey.y + 60);
+                    this.ctx.quadraticCurveTo(reachX - 20, reachY, endTreeX, monkey.y - 20);
+                    this.ctx.stroke();
+                    
+                    // Draw hands
+                    this.ctx.fillStyle = '#CD853F';
+                    this.ctx.beginPath();
+                    this.ctx.arc(startTreeX, monkey.y - 20, 10, 0, Math.PI * 2); // Left hand on start tree
+                    this.ctx.arc(endTreeX, monkey.y - 20, 10, 0, Math.PI * 2); // Right hand reaching end tree
+                    this.ctx.fill();
+                    
+                } else {
+                    // Second half: Right arm holds end tree, left arm releases and swings
+                    
+                    // Right arm holding end tree (stays put)
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(monkey.x + 80, monkey.y + 60);
+                    this.ctx.quadraticCurveTo(monkey.x + 110, monkey.y + 40, endTreeX, monkey.y - 20);
+                    this.ctx.stroke();
+                    
+                    // Left arm swinging free (releasing from start tree)
+                    const swingProgress = (progress - 0.5) * 2; // 0 to 1 for second half
+                    const swingX = monkey.x + 20 - Math.sin(swingProgress * Math.PI) * 30;
+                    const swingY = monkey.y + 60 + Math.sin(swingProgress * Math.PI) * 20;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(monkey.x + 20, monkey.y + 60);
+                    this.ctx.quadraticCurveTo(swingX, swingY, monkey.x - 20, monkey.y + 80);
+                    this.ctx.stroke();
+                    
+                    // Draw hands
+                    this.ctx.fillStyle = '#CD853F';
+                    this.ctx.beginPath();
+                    this.ctx.arc(endTreeX, monkey.y - 20, 10, 0, Math.PI * 2); // Right hand on end tree
+                    this.ctx.arc(monkey.x - 20, monkey.y + 80, 8, 0, Math.PI * 2); // Left hand swinging free
+                    this.ctx.fill();
+                }
+            }
+            
+            drawTreeBanana(x, y, scale) {
+                // Draw giant banana hanging from tree
+                this.ctx.save();
+                this.ctx.translate(x, y);
+                this.ctx.scale(scale, scale);
+                
+                // Banana main body
+                this.ctx.fillStyle = '#FFD700';
+                this.ctx.beginPath();
+                this.ctx.moveTo(-15, -3);
+                this.ctx.quadraticCurveTo(-10, -8, 0, -5);
+                this.ctx.quadraticCurveTo(10, -2, 15, 3);
+                this.ctx.quadraticCurveTo(10, 8, 0, 5);
+                this.ctx.quadraticCurveTo(-10, 2, -15, -3);
+                this.ctx.fill();
+                
+                // Banana highlights
+                this.ctx.fillStyle = '#FFFF99';
+                this.ctx.beginPath();
+                this.ctx.moveTo(-12, -1);
+                this.ctx.quadraticCurveTo(-8, -4, 2, -2);
+                this.ctx.quadraticCurveTo(8, 0, 12, 1);
+                this.ctx.quadraticCurveTo(8, 3, 2, 2);
+                this.ctx.quadraticCurveTo(-8, 0, -12, -1);
+                this.ctx.fill();
+                
+                // Banana ridges
+                this.ctx.strokeStyle = '#E6C200';
+                this.ctx.lineWidth = 1;
+                for (let i = -1; i <= 1; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-15, i * 2);
+                    this.ctx.quadraticCurveTo(0, i * 2 - 2, 15, i * 2 + 1);
+                    this.ctx.stroke();
+                }
+                
+                // Banana stem
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                this.ctx.arc(-15, -1, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.restore();
+                
+                // Stem connecting to tree
+                this.ctx.strokeStyle = '#8B4513';
+                this.ctx.lineWidth = 4;
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, y - 20);
+                this.ctx.lineTo(x, y);
+                this.ctx.stroke();
+            }
+            
+            drawVictoryMonkey() {
+                // Use the same detailed monkey as the main game
+                const monkey = this.monkey;
+                
+                // Long curly hair (draw first so it's behind the head)
+                this.ctx.fillStyle = '#654321';
+                for (let i = 0; i < 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2;
+                    const curlX = monkey.x + 50 + Math.cos(angle) * 35;
+                    const curlY = monkey.y + 30 + Math.sin(angle) * 25;
+                    const curlSize = 8 + Math.sin(Date.now() * 0.01 + i) * 2;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.arc(curlX, curlY, curlSize, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Add smaller curls for more texture
+                    const smallCurlX = curlX + Math.cos(angle + 0.5) * 15;
+                    const smallCurlY = curlY + Math.sin(angle + 0.5) * 15;
+                    this.ctx.beginPath();
+                    this.ctx.arc(smallCurlX, smallCurlY, 4, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                // Body (more monkey-like)
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 70, 35, 45, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Chest (lighter color)
+                this.ctx.fillStyle = '#DEB887';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 75, 20, 30, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Head (larger and more rounded)
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 50, monkey.y + 35, 30, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Muzzle
+                this.ctx.fillStyle = '#DEB887';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 45, 15, 12, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Nostrils
+                this.ctx.fillStyle = 'black';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 47, monkey.y + 42, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 53, monkey.y + 42, 1.5, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Eyes (larger and more expressive)
+                this.ctx.fillStyle = 'white';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 42, monkey.y + 30, 6, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58, monkey.y + 30, 6, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.fillStyle = 'black';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 43, monkey.y + 30, 3, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 57, monkey.y + 30, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Eye highlights
+                this.ctx.fillStyle = 'white';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 44, monkey.y + 29, 1, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58, monkey.y + 29, 1, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Smile
+                this.ctx.strokeStyle = 'black';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 50, monkey.y + 48, 8, 0, Math.PI);
+                this.ctx.stroke();
+                
+                // Arms (for walking/climbing)
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 8;
+                
+                // Left arm
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 20, monkey.y + 60);
+                this.ctx.lineTo(monkey.x + 10, monkey.y + 90);
+                this.ctx.stroke();
+                
+                // Right arm  
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 80, monkey.y + 60);
+                this.ctx.lineTo(monkey.x + 90, monkey.y + 90);
+                this.ctx.stroke();
+                
+                // Hands
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 10, monkey.y + 90, 8, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 90, monkey.y + 90, 8, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Legs
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 6;
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 35, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 30, monkey.y + 140);
+                this.ctx.moveTo(monkey.x + 65, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 70, monkey.y + 140);
+                this.ctx.stroke();
+                
+                // Feet
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 30, monkey.y + 145, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 70, monkey.y + 145, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            drawDancingMonkey() {
+                // Position monkey to the left of the giant banana for better visibility
+                const monkey = { x: 200, y: 400 };
+                const danceOffset = Math.sin(this.animationTime * 0.2) * 15;
+                const armWave = Math.sin(this.animationTime * 0.3) * 25;
+                const legBounce = Math.abs(Math.sin(this.animationTime * 0.4)) * 10;
+                
+                // Long curly hair (dancing and flowing)
+                this.ctx.fillStyle = '#654321';
+                for (let i = 0; i < 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2 + this.animationTime * 0.1;
+                    const curlX = monkey.x + 50 + Math.cos(angle) * (35 + danceOffset);
+                    const curlY = monkey.y + 30 + Math.sin(angle) * (25 + danceOffset);
+                    const curlSize = 8 + Math.sin(Date.now() * 0.01 + i) * 3;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.arc(curlX, curlY, curlSize, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                // Body (swaying with dance)
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50 + danceOffset, monkey.y + 70, 35, 45, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Chest (lighter color)
+                this.ctx.fillStyle = '#DEB887';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50 + danceOffset, monkey.y + 75, 20, 30, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Head (swaying with joy)
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 50 + danceOffset, monkey.y + 35, 30, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Muzzle
+                this.ctx.fillStyle = '#DEB887';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 50 + danceOffset, monkey.y + 45, 15, 12, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Nostrils
+                this.ctx.fillStyle = 'black';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 47 + danceOffset, monkey.y + 42, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 53 + danceOffset, monkey.y + 42, 1.5, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Eyes (happy and excited)
+                this.ctx.fillStyle = 'white';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 42 + danceOffset, monkey.y + 30, 8, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58 + danceOffset, monkey.y + 30, 8, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.fillStyle = 'black';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 43 + danceOffset, monkey.y + 30, 4, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 57 + danceOffset, monkey.y + 30, 4, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Eye highlights (sparkling with joy)
+                this.ctx.fillStyle = 'white';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 44 + danceOffset, monkey.y + 29, 2, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58 + danceOffset, monkey.y + 29, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Big happy smile
+                this.ctx.strokeStyle = 'black';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 50 + danceOffset, monkey.y + 48, 12, 0, Math.PI);
+                this.ctx.stroke();
+                
+                // Dancing arms (waving up and celebrating)
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 8;
+                
+                // Left arm (waving up)
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 20 + danceOffset, monkey.y + 60);
+                this.ctx.quadraticCurveTo(monkey.x + 5 + armWave, monkey.y + 40, monkey.x + 10 + armWave, monkey.y + 20);
+                this.ctx.stroke();
+                
+                // Right arm (waving up)  
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 80 + danceOffset, monkey.y + 60);
+                this.ctx.quadraticCurveTo(monkey.x + 95 - armWave, monkey.y + 40, monkey.x + 90 - armWave, monkey.y + 20);
+                this.ctx.stroke();
+                
+                // Celebrating hands
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 10 + armWave, monkey.y + 20, 10, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 90 - armWave, monkey.y + 20, 10, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Dancing legs (bouncing)
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 6;
+                this.ctx.beginPath();
+                this.ctx.moveTo(monkey.x + 35 + danceOffset, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 30 + danceOffset, monkey.y + 140 - legBounce);
+                this.ctx.moveTo(monkey.x + 65 + danceOffset, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 70 + danceOffset, monkey.y + 140 - legBounce);
+                this.ctx.stroke();
+                
+                // Dancing feet
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.ellipse(monkey.x + 30 + danceOffset, monkey.y + 145 - legBounce, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 70 + danceOffset, monkey.y + 145 - legBounce, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            drawGiantBanana() {
+                // Draw giant banana on the ground next to the monkey
+                const bananaX = 450; // To the right of the monkey
+                const bananaY = 480; // On the ground
+                const bounceOffset = Math.sin(this.animationTime * 0.15) * 5;
+                const sparkleTime = this.animationTime * 0.2;
+                
+                // Giant banana on the ground
+                this.ctx.save();
+                this.ctx.translate(bananaX, bananaY + bounceOffset);
+                this.ctx.scale(5, 5); // Make it HUGE!
+                
+                // Banana main body with more detailed curved shape
+                this.ctx.fillStyle = '#FFD700';
+                this.ctx.beginPath();
+                this.ctx.moveTo(-20, -5);
+                this.ctx.quadraticCurveTo(-15, -12, 0, -8);
+                this.ctx.quadraticCurveTo(15, -4, 20, 5);
+                this.ctx.quadraticCurveTo(15, 12, 0, 8);
+                this.ctx.quadraticCurveTo(-15, 4, -20, -5);
+                this.ctx.fill();
+                
+                // Banana highlights (to make it look 3D and shiny)
+                this.ctx.fillStyle = '#FFFF99';
+                this.ctx.beginPath();
+                this.ctx.moveTo(-16, -2);
+                this.ctx.quadraticCurveTo(-12, -6, 2, -4);
+                this.ctx.quadraticCurveTo(12, -1, 16, 2);
+                this.ctx.quadraticCurveTo(12, 6, 2, 4);
+                this.ctx.quadraticCurveTo(-12, 1, -16, -2);
+                this.ctx.fill();
+                
+                // Banana ridges (the lines on a real banana) - more detailed
+                this.ctx.strokeStyle = '#E6C200';
+                this.ctx.lineWidth = 1.5;
+                for (let i = -2; i <= 2; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-20, i * 3);
+                    this.ctx.quadraticCurveTo(0, i * 3 - 3, 20, i * 3 + 2);
+                    this.ctx.stroke();
+                }
+                
+                // Banana stem (brown tip) - more detailed
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                this.ctx.arc(-20, -2, 4, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.fillStyle = '#654321';
+                this.ctx.beginPath();
+                this.ctx.arc(-20, -2, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Banana bottom tip - more detailed
+                this.ctx.fillStyle = '#654321';
+                this.ctx.beginPath();
+                this.ctx.arc(20, 3, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.restore();
+                
+                // Add sparkles around the giant banana
+                for (let i = 0; i < 8; i++) {
+                    const sparkleAngle = (i / 8) * Math.PI * 2 + sparkleTime;
+                    const sparkleDistance = 80 + Math.sin(sparkleTime + i) * 15;
+                    const sparkleX = bananaX + Math.cos(sparkleAngle) * sparkleDistance;
+                    const sparkleY = bananaY + Math.sin(sparkleAngle) * sparkleDistance + bounceOffset;
+                    const sparkleSize = 3 + Math.sin(sparkleTime * 2 + i) * 2;
+                    
+                    this.ctx.fillStyle = '#FFD700';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(sparkleX, sparkleY - sparkleSize);
+                    this.ctx.lineTo(sparkleX + sparkleSize, sparkleY);
+                    this.ctx.lineTo(sparkleX, sparkleY + sparkleSize);
+                    this.ctx.lineTo(sparkleX - sparkleSize, sparkleY);
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                }
+            }
+            
+            gameLoop() {
+                // Clear canvas
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Draw background
+                this.drawBackground();
+                
+                if (this.gameMode === 'victory') {
+                    this.updateVictorySequence();
+                    this.drawVictorySequence();
+                } else if (this.gameRunning) {
+                    // Update game objects
+                    this.spawnBanana();
+                    this.updateBasket();
+                    this.updateBananas();
+                    this.updateParticles();
+                    
+                    // Draw game objects
+                    this.drawMonkey();
+                    this.drawBasket();
+                    this.drawBananas();
+                    this.drawParticles();
+                } else {
+                    // Draw static game objects
+                    this.drawMonkey();
+                    this.drawBasket();
+                    this.drawBananas();
+                    this.drawParticles();
+                }
+                
+                // Continue game loop
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // Start the game when page loads
+        window.addEventListener('load', () => {
+            new BananaCatchingGame();
+        });
+    </script>
+</body>
+</html>
