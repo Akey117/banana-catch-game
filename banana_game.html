@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,6 +29,31 @@
             height: 600px;
             background: linear-gradient(to bottom, #87CEEB 0%, #90EE90 100%);
             overflow: hidden;
+            max-width: 100vw;
+            max-height: 80vh;
+        }
+
+        /* Mobile responsive styles */
+        @media (max-width: 850px) {
+            #gameContainer {
+                width: 95vw;
+                height: 60vh;
+            }
+            
+            #gameCanvas {
+                width: 100%;
+                height: 100%;
+            }
+            
+            #gameInfo {
+                width: 95vw;
+                font-size: 16px;
+            }
+            
+            #instructions {
+                font-size: 14px;
+                padding: 0 10px;
+            }
         }
 
         #gameCanvas {
@@ -202,6 +228,9 @@
             init() {
                 this.startButton.addEventListener('click', () => this.startGame());
                 
+                // Touch events for mobile
+                this.setupTouchControls();
+                
                 // Keyboard events
                 document.addEventListener('keydown', (e) => {
                     this.keys[e.key.toLowerCase()] = true;
@@ -299,8 +328,93 @@
                 }
             }
             
+            setupTouchControls() {
+                // Touch state tracking
+                this.touchState = {
+                    isActive: false,
+                    startX: 0,
+                    currentX: 0,
+                    targetX: 0
+                };
+                
+                // Touch event handlers
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (this.gameRunning) {
+                        const touch = e.touches[0];
+                        const rect = this.canvas.getBoundingClientRect();
+                        const touchX = (touch.clientX - rect.left) * (this.canvas.width / rect.width);
+                        
+                        this.touchState.isActive = true;
+                        this.touchState.startX = touchX;
+                        this.touchState.currentX = touchX;
+                        this.touchState.targetX = touchX;
+                        
+                        // Visual feedback - make monkey slightly bigger when touched
+                        this.monkeyTouchScale = 1.1;
+                    }
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (this.gameRunning && this.touchState.isActive) {
+                        const touch = e.touches[0];
+                        const rect = this.canvas.getBoundingClientRect();
+                        const touchX = (touch.clientX - rect.left) * (this.canvas.width / rect.width);
+                        
+                        this.touchState.currentX = touchX;
+                        this.touchState.targetX = touchX;
+                    }
+                });
+                
+                this.canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    this.touchState.isActive = false;
+                    this.monkeyTouchScale = 1.0;
+                });
+                
+                // Click/tap events for monkey movement
+                this.canvas.addEventListener('click', (e) => {
+                    if (this.gameRunning) {
+                        const rect = this.canvas.getBoundingClientRect();
+                        const clickX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+                        
+                        this.touchState.targetX = clickX;
+                        this.touchState.isActive = true;
+                        
+                        // Visual feedback
+                        this.monkeyTouchScale = 1.1;
+                        setTimeout(() => {
+                            this.monkeyTouchScale = 1.0;
+                        }, 150);
+                    }
+                });
+                
+                // Initialize touch scale
+                this.monkeyTouchScale = 1.0;
+            }
+            
             updateBasket() {
                 // Move monkey and basket together based on input
+                
+                // Touch/mouse movement
+                if (this.touchState.isActive && Math.abs(this.touchState.targetX - (this.monkey.x + 50)) > 5) {
+                    const direction = this.touchState.targetX > (this.monkey.x + 50) ? 1 : -1;
+                    const distance = Math.abs(this.touchState.targetX - (this.monkey.x + 50));
+                    const moveSpeed = Math.min(this.monkey.speed * 1.5, distance * 0.1);
+                    
+                    this.monkey.x += direction * moveSpeed;
+                    
+                    // Keep monkey within bounds
+                    if (this.monkey.x < 0) this.monkey.x = 0;
+                    if (this.monkey.x > this.canvas.width - this.monkey.width) {
+                        this.monkey.x = this.canvas.width - this.monkey.width;
+                    }
+                    
+                    this.basket.x = this.monkey.x + 20; // Basket follows monkey
+                }
+                
+                // Keyboard movement (still works)
                 if ((this.keys['arrowleft'] || this.keys['a']) && this.monkey.x > 0) {
                     this.monkey.x -= this.monkey.speed;
                     this.basket.x = this.monkey.x + 20; // Basket follows monkey
