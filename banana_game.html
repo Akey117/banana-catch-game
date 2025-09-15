@@ -174,7 +174,8 @@
     
     <div id="instructions">
         Catch the falling bananas and avoid letting them hit the ground!<br>
-        Use LEFT & RIGHT arrow keys to move the monkey and its basket!<br>
+        <strong>Desktop:</strong> Use LEFT & RIGHT arrow keys to move the monkey and its basket!<br>
+        <strong>Mobile:</strong> Drag left/right on screen to move the monkey and its basket!<br>
         Catch 10 and skip ahead to victory dance with your giant banana...<br>
         or move on to level two and start catching dollar bills!
     </div>
@@ -218,6 +219,7 @@
                 
                 this.bananas = [];
                 this.particles = [];
+                this.dollarRain = []; // Continuous dollar rain animation
                 
                 // Input handling
                 this.keys = {};
@@ -239,6 +241,18 @@
                     if (e.code === 'Space' && this.gameMode === 'victory' && (this.victoryPhase === 2 || this.victoryPhase === 3)) {
                         e.preventDefault();
                         this.handleTreeJump();
+                    }
+                    
+                    // Handle Command+B to jump to victory dance
+                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+                        e.preventDefault();
+                        this.startVictorySequence();
+                    }
+                    
+                    // Handle Command+E to jump to level 2 ending
+                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
+                        e.preventDefault();
+                        this.startCashAppEnding();
                     }
                     
                     // Handle spacebar to exit messages
@@ -278,6 +292,93 @@
                 this.gameLoop();
             }
             
+            setupTouchControls() {
+                // Touch controls for mobile devices
+                let touchStartX = 0;
+                let touchStartY = 0;
+                let isTouching = false;
+                
+                // Touch start
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    isTouching = true;
+                }, { passive: false });
+                
+                // Touch move for continuous movement
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (!isTouching || !this.gameRunning) return;
+                    
+                    const touch = e.touches[0];
+                    const currentX = touch.clientX;
+                    const deltaX = currentX - touchStartX;
+                    
+                    // Move monkey based on touch movement
+                    if (Math.abs(deltaX) > 10) { // Minimum movement threshold
+                        if (deltaX > 0 && this.monkey.x < this.canvas.width - this.monkey.width) {
+                            // Moving right
+                            this.monkey.x += this.monkey.speed;
+                            this.basket.x = this.monkey.x + 20;
+                        } else if (deltaX < 0 && this.monkey.x > 0) {
+                            // Moving left
+                            this.monkey.x -= this.monkey.speed;
+                            this.basket.x = this.monkey.x + 20;
+                        }
+                        touchStartX = currentX; // Update start position for continuous movement
+                    }
+                }, { passive: false });
+                
+                // Touch end
+                this.canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    isTouching = false;
+                }, { passive: false });
+                
+                // Tap controls for game actions
+                this.canvas.addEventListener('touchstart', (e) => {
+                    if (e.touches.length === 1) {
+                        const touch = e.touches[0];
+                        const rect = this.canvas.getBoundingClientRect();
+                        const tapX = touch.clientX - rect.left;
+                        const tapY = touch.clientY - rect.top;
+                        
+                        // Handle spacebar-like actions with tap
+                        if (this.gameMode === 'victory' && (this.victoryPhase === 2 || this.victoryPhase === 3)) {
+                            this.handleTreeJump();
+                        }
+                        
+                        // Close popups with tap
+                        const choicePopup = document.getElementById('choicePopup');
+                        if (choicePopup) {
+                            document.body.removeChild(choicePopup);
+                            this.gameRunning = true;
+                            this.gameMode = 'catching';
+                        }
+                        
+                        const level2Popup = document.getElementById('level2Popup');
+                        if (level2Popup) {
+                            document.body.removeChild(level2Popup);
+                            this.gameRunning = true;
+                            this.gameMode = 'catching';
+                        }
+                        
+                        const cashAppPopup = document.getElementById('cashAppPopup');
+                        if (cashAppPopup) {
+                            document.body.removeChild(cashAppPopup);
+                            this.startWinkAnimation();
+                        }
+                    }
+                });
+                
+                // Prevent default touch behaviors on the canvas
+                this.canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                this.canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+                this.canvas.addEventListener('touchend', (e) => e.preventDefault(), { passive: false });
+            }
+            
             startGame() {
                 this.gameRunning = true;
                 this.score = 0;
@@ -299,10 +400,10 @@
                     const spawnRate = 0.008 + (this.level * 0.002);
                     if (Math.random() < spawnRate) {
                         this.bananas.push({
-                            x: Math.random() * (this.canvas.width - 40),
-                            y: -40,
-                            width: 40,
-                            height: 40,
+                            x: Math.random() * (this.canvas.width - 60),
+                            y: -60,
+                            width: 60,
+                            height: 60,
                             speed: 1 + (this.level * 0.2),
                             rotation: 0
                         });
@@ -328,93 +429,8 @@
                 }
             }
             
-            setupTouchControls() {
-                // Touch state tracking
-                this.touchState = {
-                    isActive: false,
-                    startX: 0,
-                    currentX: 0,
-                    targetX: 0
-                };
-                
-                // Touch event handlers
-                this.canvas.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    if (this.gameRunning) {
-                        const touch = e.touches[0];
-                        const rect = this.canvas.getBoundingClientRect();
-                        const touchX = (touch.clientX - rect.left) * (this.canvas.width / rect.width);
-                        
-                        this.touchState.isActive = true;
-                        this.touchState.startX = touchX;
-                        this.touchState.currentX = touchX;
-                        this.touchState.targetX = touchX;
-                        
-                        // Visual feedback - make monkey slightly bigger when touched
-                        this.monkeyTouchScale = 1.1;
-                    }
-                });
-                
-                this.canvas.addEventListener('touchmove', (e) => {
-                    e.preventDefault();
-                    if (this.gameRunning && this.touchState.isActive) {
-                        const touch = e.touches[0];
-                        const rect = this.canvas.getBoundingClientRect();
-                        const touchX = (touch.clientX - rect.left) * (this.canvas.width / rect.width);
-                        
-                        this.touchState.currentX = touchX;
-                        this.touchState.targetX = touchX;
-                    }
-                });
-                
-                this.canvas.addEventListener('touchend', (e) => {
-                    e.preventDefault();
-                    this.touchState.isActive = false;
-                    this.monkeyTouchScale = 1.0;
-                });
-                
-                // Click/tap events for monkey movement
-                this.canvas.addEventListener('click', (e) => {
-                    if (this.gameRunning) {
-                        const rect = this.canvas.getBoundingClientRect();
-                        const clickX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
-                        
-                        this.touchState.targetX = clickX;
-                        this.touchState.isActive = true;
-                        
-                        // Visual feedback
-                        this.monkeyTouchScale = 1.1;
-                        setTimeout(() => {
-                            this.monkeyTouchScale = 1.0;
-                        }, 150);
-                    }
-                });
-                
-                // Initialize touch scale
-                this.monkeyTouchScale = 1.0;
-            }
-            
             updateBasket() {
                 // Move monkey and basket together based on input
-                
-                // Touch/mouse movement
-                if (this.touchState.isActive && Math.abs(this.touchState.targetX - (this.monkey.x + 50)) > 5) {
-                    const direction = this.touchState.targetX > (this.monkey.x + 50) ? 1 : -1;
-                    const distance = Math.abs(this.touchState.targetX - (this.monkey.x + 50));
-                    const moveSpeed = Math.min(this.monkey.speed * 1.5, distance * 0.1);
-                    
-                    this.monkey.x += direction * moveSpeed;
-                    
-                    // Keep monkey within bounds
-                    if (this.monkey.x < 0) this.monkey.x = 0;
-                    if (this.monkey.x > this.canvas.width - this.monkey.width) {
-                        this.monkey.x = this.canvas.width - this.monkey.width;
-                    }
-                    
-                    this.basket.x = this.monkey.x + 20; // Basket follows monkey
-                }
-                
-                // Keyboard movement (still works)
                 if ((this.keys['arrowleft'] || this.keys['a']) && this.monkey.x > 0) {
                     this.monkey.x -= this.monkey.speed;
                     this.basket.x = this.monkey.x + 20; // Basket follows monkey
@@ -559,7 +575,7 @@
             drawMonkey() {
                 const monkey = this.monkey;
                 
-                // Draw tail first (behind everything)
+                // Draw tail first (behind everything) - ATTACHED to body
                 this.drawMonkeyTail(monkey.x, monkey.y);
                 
                 // Big ears ATTACHED to head (draw first so they're behind the head)
@@ -576,16 +592,16 @@
                 this.ctx.arc(monkey.x + 80, monkey.y + 25, 15, 0, Math.PI * 2); // Right inner ear
                 this.ctx.fill();
                 
-                // Body (more monkey-like)
+                // Body (more monkey-like but shorter)
                 this.ctx.fillStyle = '#8B4513';
                 this.ctx.beginPath();
-                this.ctx.ellipse(monkey.x + 50, monkey.y + 70, 35, 45, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 65, 35, 35, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 
                 // Chest (lighter color)
                 this.ctx.fillStyle = '#DEB887';
                 this.ctx.beginPath();
-                this.ctx.ellipse(monkey.x + 50, monkey.y + 75, 20, 30, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 50, monkey.y + 68, 20, 25, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 
                 // Head (larger and more rounded)
@@ -680,22 +696,22 @@
                 this.ctx.arc(this.basket.x + this.basket.width + 5, this.basket.y + 10, 8, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                // Legs
+                // Legs - CONNECTED to body and extending to feet
                 this.ctx.fillStyle = '#8B4513';
                 this.ctx.strokeStyle = '#654321';
                 this.ctx.lineWidth = 6;
                 this.ctx.beginPath();
-                this.ctx.moveTo(monkey.x + 35, monkey.y + 110);
-                this.ctx.lineTo(monkey.x + 30, monkey.y + 140);
-                this.ctx.moveTo(monkey.x + 65, monkey.y + 110);
-                this.ctx.lineTo(monkey.x + 70, monkey.y + 140);
+                this.ctx.moveTo(monkey.x + 35, monkey.y + 100); // Start from body bottom
+                this.ctx.lineTo(monkey.x + 30, monkey.y + 135); // Extend to feet
+                this.ctx.moveTo(monkey.x + 65, monkey.y + 100); // Start from body bottom
+                this.ctx.lineTo(monkey.x + 70, monkey.y + 135); // Extend to feet
                 this.ctx.stroke();
                 
-                // Feet
+                // Feet - positioned at bottom of legs
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.ellipse(monkey.x + 30, monkey.y + 145, 12, 6, 0, 0, Math.PI * 2);
-                this.ctx.ellipse(monkey.x + 70, monkey.y + 145, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 30, monkey.y + 140, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 70, monkey.y + 140, 12, 6, 0, 0, Math.PI * 2);
                 this.ctx.fill();
             }
             
@@ -705,9 +721,9 @@
                 const tailSway = Math.sin(tailTime) * 15; // Sway left and right
                 const tailCurl = Math.sin(tailTime * 1.5) * 10; // Curl motion
                 
-                // Tail base position (behind the monkey)
-                const tailBaseX = monkeyX + 85; // Right side of monkey
-                const tailBaseY = monkeyY + 90; // Mid-body height
+                // Tail base position (ATTACHED to monkey's body)
+                const tailBaseX = monkeyX + 75; // Attached to right side of monkey body
+                const tailBaseY = monkeyY + 85; // Attached to middle of monkey body
                 
                 // Tail segments for curved appearance
                 this.ctx.strokeStyle = '#8B4513';
@@ -755,6 +771,62 @@
                 this.ctx.fill();
             }
             
+            drawMonkeyTailScaled(offsetX, offsetY, scale) {
+                // Draw animated curvy monkey tail for scaled contexts
+                const tailTime = Date.now() * 0.003; // Slow animation
+                const tailSway = Math.sin(tailTime) * 12; // Sway left and right (scaled down)
+                const tailCurl = Math.sin(tailTime * 1.5) * 8; // Curl motion (scaled down)
+                
+                // Tail base position (ATTACHED to monkey's body in scaled coordinates)
+                const tailBaseX = 65 + offsetX; // Attached to right side of monkey body in scaled space
+                const tailBaseY = 60 + offsetY; // Attached to middle of monkey body in scaled space
+                
+                // Tail segments for curved appearance
+                this.ctx.strokeStyle = '#8B4513';
+                this.ctx.lineWidth = 6;
+                this.ctx.lineCap = 'round';
+                
+                // Draw tail as a curved path with multiple segments
+                this.ctx.beginPath();
+                this.ctx.moveTo(tailBaseX, tailBaseY);
+                
+                // First curve (upward and back)
+                this.ctx.quadraticCurveTo(
+                    tailBaseX + 15 + tailSway, 
+                    tailBaseY - 15 + tailCurl, 
+                    tailBaseX + 25 + tailSway, 
+                    tailBaseY - 8
+                );
+                
+                // Second curve (downward curl)
+                this.ctx.quadraticCurveTo(
+                    tailBaseX + 35 + tailSway * 1.2, 
+                    tailBaseY + 8 + tailCurl, 
+                    tailBaseX + 32 + tailSway * 1.5, 
+                    tailBaseY + 20 + tailCurl * 1.2
+                );
+                
+                // Final curl (upward tip)
+                this.ctx.quadraticCurveTo(
+                    tailBaseX + 25 + tailSway * 1.5, 
+                    tailBaseY + 30 + tailCurl * 1.5, 
+                    tailBaseX + 18 + tailSway * 2, 
+                    tailBaseY + 25 + tailCurl * 1.5
+                );
+                
+                this.ctx.stroke();
+                
+                // Tail tip (darker color)
+                this.ctx.fillStyle = '#654321';
+                this.ctx.beginPath();
+                this.ctx.arc(
+                    tailBaseX + 18 + tailSway * 2, 
+                    tailBaseY + 25 + tailCurl * 1.5, 
+                    3, 0, Math.PI * 2
+                );
+                this.ctx.fill();
+            }
+            
             drawPhoneWithCashApp(x, y) {
                 // Phone body (black rectangle with rounded corners)
                 this.ctx.fillStyle = '#2C2C2C';
@@ -788,13 +860,74 @@
                 this.ctx.fill();
             }
             
+            drawPartyHat(x, y, scale = 1) {
+                // Draw white triangle party hat with red pom pom on top of monkey's head
+                this.ctx.save();
+                this.ctx.translate(x, y);
+                this.ctx.scale(scale, scale);
+                
+                // Hat base (white triangle)
+                this.ctx.fillStyle = 'white';
+                this.ctx.strokeStyle = '#E0E0E0';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, -25); // Top point
+                this.ctx.lineTo(-15, 5);  // Bottom left
+                this.ctx.lineTo(15, 5);   // Bottom right
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Hat brim (small curved line at bottom)
+                this.ctx.strokeStyle = '#D0D0D0';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.moveTo(-15, 5);
+                this.ctx.quadraticCurveTo(0, 8, 15, 5);
+                this.ctx.stroke();
+                
+                // Red pom pom on top
+                this.ctx.fillStyle = '#FF0000';
+                this.ctx.beginPath();
+                this.ctx.arc(0, -25, 4, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Pom pom highlight (to make it look fluffy)
+                this.ctx.fillStyle = '#FF6666';
+                this.ctx.beginPath();
+                this.ctx.arc(-1, -26, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Small sparkles around pom pom for party effect
+                this.ctx.fillStyle = '#FFD700';
+                for (let i = 0; i < 4; i++) {
+                    const sparkleAngle = (i / 4) * Math.PI * 2;
+                    const sparkleX = Math.cos(sparkleAngle) * 8;
+                    const sparkleY = -25 + Math.sin(sparkleAngle) * 8;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(sparkleX, sparkleY - 1);
+                    this.ctx.lineTo(sparkleX + 1, sparkleY);
+                    this.ctx.lineTo(sparkleX, sparkleY + 1);
+                    this.ctx.lineTo(sparkleX - 1, sparkleY);
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                }
+                
+                this.ctx.restore();
+            }
+            
             drawBasket() {
-                // Basket body
-                this.ctx.fillStyle = '#DEB887';
+                // First, hide the feet behind the basket by drawing a slightly larger background rectangle
+                this.ctx.fillStyle = '#DEB887'; // Light brown color to match basket
+                this.ctx.fillRect(this.basket.x - 5, this.basket.y - 5, this.basket.width + 10, this.basket.height + 15);
+                
+                // Basket body - LIGHT BROWN
+                this.ctx.fillStyle = '#DEB887'; // Light brown color
                 this.ctx.fillRect(this.basket.x, this.basket.y, this.basket.width, this.basket.height);
                 
-                // Basket weave pattern
-                this.ctx.strokeStyle = '#8B7355';
+                // Basket weave pattern - darker brown
+                this.ctx.strokeStyle = '#654321'; // Darker brown
                 this.ctx.lineWidth = 2;
                 for (let i = 0; i < 4; i++) {
                     this.ctx.beginPath();
@@ -816,61 +949,81 @@
                     this.ctx.translate(banana.x + banana.width/2, banana.y + banana.height/2);
                     this.ctx.rotate(banana.rotation);
                     
-                    // Banana main body (more realistic curved shape)
+                    // Banana main body - MORE CURVED, NOT FAT - THINNER AND MORE CURVED
                     this.ctx.fillStyle = '#FFD700';
                     this.ctx.beginPath();
-                    this.ctx.moveTo(-18, -4);
-                    this.ctx.quadraticCurveTo(-12, -10, 0, -6);
-                    this.ctx.quadraticCurveTo(12, -3, 18, 4);
-                    this.ctx.quadraticCurveTo(12, 10, 0, 6);
-                    this.ctx.quadraticCurveTo(-12, 3, -18, -4);
+                    // Create a THINNER, MORE CURVED banana shape - NOT FAT
+                    this.ctx.moveTo(-25, -3);
+                    this.ctx.quadraticCurveTo(-20, -15, -5, -12);
+                    this.ctx.quadraticCurveTo(8, -8, 15, -4);
+                    this.ctx.quadraticCurveTo(25, -1, 28, 4);
+                    this.ctx.quadraticCurveTo(26, 10, 18, 12);
+                    this.ctx.quadraticCurveTo(6, 14, -5, 12);
+                    this.ctx.quadraticCurveTo(-15, 10, -22, 6);
+                    this.ctx.quadraticCurveTo(-28, 3, -25, -3);
                     this.ctx.fill();
                     
-                    // Banana highlights (to make it look 3D and shiny)
+                    // Banana highlights (to make it look 3D and shiny) - BETTER CURVED SHAPE
                     this.ctx.fillStyle = '#FFFF99';
                     this.ctx.beginPath();
-                    this.ctx.moveTo(-14, -2);
-                    this.ctx.quadraticCurveTo(-10, -5, 2, -3);
-                    this.ctx.quadraticCurveTo(10, -1, 14, 2);
-                    this.ctx.quadraticCurveTo(10, 5, 2, 3);
-                    this.ctx.quadraticCurveTo(-10, 1, -14, -2);
+                    this.ctx.moveTo(-20, -1);
+                    this.ctx.quadraticCurveTo(-15, -6, 0, -4);
+                    this.ctx.quadraticCurveTo(12, -2, 18, 0);
+                    this.ctx.quadraticCurveTo(20, 3, 15, 6);
+                    this.ctx.quadraticCurveTo(8, 7, 0, 5);
+                    this.ctx.quadraticCurveTo(-12, 3, -20, -1);
                     this.ctx.fill();
                     
-                    // Banana ridges (the lines on a real banana) - more detailed
+                    // Banana ridges (the natural lines on a real banana) - CURVED TO FOLLOW SHAPE
                     this.ctx.strokeStyle = '#E6C200';
-                    this.ctx.lineWidth = 1.2;
+                    this.ctx.lineWidth = 1.5;
                     for (let i = -2; i <= 2; i++) {
                         this.ctx.beginPath();
-                        this.ctx.moveTo(-18, i * 2.5);
-                        this.ctx.quadraticCurveTo(0, i * 2.5 - 2, 18, i * 2.5 + 1.5);
+                        this.ctx.moveTo(-23, i * 2.5);
+                        // Make ridges follow the curved banana shape
+                        this.ctx.quadraticCurveTo(-8, i * 2.5 - 2, 8, i * 2.5 - 1);
+                        this.ctx.quadraticCurveTo(18, i * 2.5 + 1, 22, i * 2.5 + 2);
                         this.ctx.stroke();
                     }
                     
-                    // Banana stem (brown tip) - more detailed
+                    // Banana stem (brown tip at the top) - MORE REALISTIC
                     this.ctx.fillStyle = '#8B4513';
                     this.ctx.beginPath();
-                    this.ctx.arc(-18, -2, 4, 0, Math.PI * 2);
+                    this.ctx.arc(-24, -1, 5, 0, Math.PI * 2);
                     this.ctx.fill();
                     this.ctx.fillStyle = '#654321';
                     this.ctx.beginPath();
-                    this.ctx.arc(-18, -2, 2, 0, Math.PI * 2);
+                    this.ctx.arc(-24, -1, 2.5, 0, Math.PI * 2);
                     this.ctx.fill();
                     
-                    // Banana bottom tip - more detailed
+                    // Banana bottom tip - MORE REALISTIC POINTED END
                     this.ctx.fillStyle = '#654321';
                     this.ctx.beginPath();
-                    this.ctx.arc(18, 3, 3, 0, Math.PI * 2);
+                    this.ctx.arc(22, 6, 3, 0, Math.PI * 2);
                     this.ctx.fill();
                     
-                    // Add small brown spots for realism
+                    // Add natural brown spots for realism - BETTER PLACEMENT
                     this.ctx.fillStyle = '#CD853F';
-                    for (let i = 0; i < 3; i++) {
-                        const spotX = -8 + (i * 8);
-                        const spotY = -2 + Math.sin(i) * 3;
+                    for (let i = 0; i < 5; i++) {
+                        const spotX = -15 + (i * 7);
+                        const spotY = -2 + Math.sin(i * 0.8) * 3;
                         this.ctx.beginPath();
-                        this.ctx.arc(spotX, spotY, 1, 0, Math.PI * 2);
+                        this.ctx.arc(spotX, spotY, 1.2, 0, Math.PI * 2);
                         this.ctx.fill();
                     }
+                    
+                    // Add subtle darker edge for depth
+                    this.ctx.strokeStyle = '#DAA520';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-25, -2);
+                    this.ctx.quadraticCurveTo(-20, -12, -5, -8);
+                    this.ctx.quadraticCurveTo(8, -6, 20, -2);
+                    this.ctx.quadraticCurveTo(25, 2, 22, 8);
+                    this.ctx.quadraticCurveTo(15, 12, 5, 10);
+                    this.ctx.quadraticCurveTo(-8, 8, -20, 6);
+                    this.ctx.quadraticCurveTo(-25, 2, -25, -2);
+                    this.ctx.stroke();
                     
                     this.ctx.restore();
                 });
@@ -891,34 +1044,36 @@
                     this.ctx.fill();
                     this.ctx.stroke();
                     
-                    // Inner border
+                    // Inner border (more prominent)
                     this.ctx.strokeStyle = '#006400';
-                    this.ctx.lineWidth = 1;
+                    this.ctx.lineWidth = 1.5;
                     this.ctx.beginPath();
                     this.ctx.roundRect(-16, -6, 32, 12, 2);
                     this.ctx.stroke();
                     
-                    // Dollar sign
+                    // LARGE prominent dollar sign (main feature)
                     this.ctx.fillStyle = '#006400';
-                    this.ctx.font = 'bold 16px Arial';
+                    this.ctx.strokeStyle = '#003300';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.font = 'bold 20px Arial';
                     this.ctx.textAlign = 'center';
                     this.ctx.textBaseline = 'middle';
+                    this.ctx.strokeText('$', 0, 0);
                     this.ctx.fillText('$', 0, 0);
                     
-                    // Corner decorations (small circles)
+                    // Corner dollar signs (smaller)
                     this.ctx.fillStyle = '#006400';
-                    this.ctx.beginPath();
-                    this.ctx.arc(-12, -4, 1.5, 0, Math.PI * 2);
-                    this.ctx.arc(12, -4, 1.5, 0, Math.PI * 2);
-                    this.ctx.arc(-12, 4, 1.5, 0, Math.PI * 2);
-                    this.ctx.arc(12, 4, 1.5, 0, Math.PI * 2);
-                    this.ctx.fill();
+                    this.ctx.font = 'bold 8px Arial';
+                    this.ctx.fillText('$', -12, -4);
+                    this.ctx.fillText('$', 12, -4);
+                    this.ctx.fillText('$', -12, 4);
+                    this.ctx.fillText('$', 12, 4);
                     
-                    // Serial number (small text)
+                    // "ONE DOLLAR" text (small)
                     this.ctx.fillStyle = '#006400';
-                    this.ctx.font = '6px Arial';
-                    this.ctx.fillText('1', -8, -2);
-                    this.ctx.fillText('1', 8, -2);
+                    this.ctx.font = '4px Arial';
+                    this.ctx.fillText('ONE', 0, -10);
+                    this.ctx.fillText('DOLLAR', 0, 10);
                     
                     this.ctx.restore();
                 });
@@ -1128,6 +1283,9 @@
                 this.bananas = [];
                 this.dollarBills = [];
                 
+                // Initialize money falling animation for level 2 ending
+                this.fallingMoney = [];
+                
                 // Position monkey in center for the ending
                 this.monkey.x = 350;
                 this.monkey.y = 250;
@@ -1135,6 +1293,10 @@
             
             updateCashAppSequence() {
                 this.animationTime += 1;
+                
+                // Spawn falling money throughout all phases
+                this.spawnFallingMoney();
+                this.updateFallingMoney();
                 
                 switch (this.cashAppPhase) {
                     case 0: // Show bitcoin message on screen - stays visible throughout
@@ -1154,7 +1316,84 @@
                 }
             }
             
+            spawnFallingMoney() {
+                // Create falling money effect for level 2 ending
+                if (Math.random() < 0.15) { // 15% chance each frame
+                    this.fallingMoney.push({
+                        x: Math.random() * this.canvas.width,
+                        y: -40,
+                        width: 40,
+                        height: 25,
+                        speed: 2 + Math.random() * 4, // Faster falling
+                        rotation: Math.random() * Math.PI * 2,
+                        rotationSpeed: (Math.random() - 0.5) * 0.1
+                    });
+                }
+            }
+            
+            updateFallingMoney() {
+                // Update falling money animation - falls all the way to bottom and beyond
+                for (let i = this.fallingMoney.length - 1; i >= 0; i--) {
+                    const money = this.fallingMoney[i];
+                    money.y += money.speed;
+                    money.rotation += money.rotationSpeed;
+                    
+                    // Remove if completely off screen (way below bottom of canvas)
+                    if (money.y > this.canvas.height + 200) {
+                        this.fallingMoney.splice(i, 1);
+                    }
+                }
+            }
+            
+            drawFallingMoney() {
+                // Draw falling money animation
+                this.fallingMoney.forEach(money => {
+                    this.ctx.save();
+                    this.ctx.translate(money.x + money.width/2, money.y + money.height/2);
+                    this.ctx.rotate(money.rotation);
+                    
+                    // Dollar bill main body (same as game dollars but bigger)
+                    this.ctx.fillStyle = '#85BB65'; // Dollar bill green
+                    this.ctx.strokeStyle = '#228B22';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(-money.width/2, -money.height/2, money.width, money.height, 3);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Inner border
+                    this.ctx.strokeStyle = '#006400';
+                    this.ctx.lineWidth = 1.5;
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(-money.width/2 + 2, -money.height/2 + 2, money.width - 4, money.height - 4, 2);
+                    this.ctx.stroke();
+                    
+                    // Large dollar sign
+                    this.ctx.fillStyle = '#006400';
+                    this.ctx.strokeStyle = '#003300';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.font = 'bold 24px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.strokeText('$', 0, 0);
+                    this.ctx.fillText('$', 0, 0);
+                    
+                    // Corner dollar signs
+                    this.ctx.fillStyle = '#006400';
+                    this.ctx.font = 'bold 10px Arial';
+                    this.ctx.fillText('$', -money.width/2 + 8, -money.height/2 + 6);
+                    this.ctx.fillText('$', money.width/2 - 8, -money.height/2 + 6);
+                    this.ctx.fillText('$', -money.width/2 + 8, money.height/2 - 6);
+                    this.ctx.fillText('$', money.width/2 - 8, money.height/2 - 6);
+                    
+                    this.ctx.restore();
+                });
+            }
+            
             drawCashAppSequence() {
+                // Draw falling money animation first (behind everything)
+                this.drawFallingMoney();
+                
                 // Draw the monkey (bigger for ending)
                 this.drawEndingMonkey();
                 
@@ -1168,215 +1407,185 @@
             }
             
             drawBitcoinMessage() {
-                // Draw speech bubble positioned to the RIGHT of monkey (not above)
+                // Draw speech bubble positioned to the SIDE of monkey (floating beside, not from mouth)
                 this.ctx.save();
                 
-                const bubbleWidth = 180;
-                const bubbleHeight = 70;
-                const bubbleX = this.monkey.x + 150; // Position to the RIGHT of monkey
-                const bubbleY = this.monkey.y + 10; // Position at monkey's head level
+                const bubbleWidth = 240; // Smaller than before (was 360)
+                const bubbleHeight = 100; // Smaller than before (was 140)
+                const bubbleX = this.monkey.x + 200; // Position to the RIGHT of monkey
+                const bubbleY = this.monkey.y + 60; // Position at monkey's body level, not head
                 
                 // Make sure bubble stays on screen
                 const minX = 10;
                 const maxX = this.canvas.width - bubbleWidth - 10;
                 const adjustedBubbleX = Math.max(minX, Math.min(bubbleX, maxX));
                 
-                // Draw speech bubble background
+                // Draw speech bubble background (floating style, no tail pointing to mouth)
                 this.ctx.fillStyle = 'white';
                 this.ctx.strokeStyle = '#8B4513';
-                this.ctx.lineWidth = 2;
+                this.ctx.lineWidth = 3;
                 this.ctx.beginPath();
-                this.ctx.roundRect(adjustedBubbleX, bubbleY, bubbleWidth, bubbleHeight, 8);
+                this.ctx.roundRect(adjustedBubbleX, bubbleY, bubbleWidth, bubbleHeight, 12);
                 this.ctx.fill();
                 this.ctx.stroke();
                 
-                // Draw speech bubble tail pointing to monkey's mouth (from LEFT side of bubble)
-                this.ctx.fillStyle = 'white';
-                this.ctx.strokeStyle = '#8B4513';
+                // Add a subtle shadow for floating effect
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
                 this.ctx.beginPath();
-                this.ctx.moveTo(adjustedBubbleX, bubbleY + 30); // Left side of bubble
-                this.ctx.lineTo(this.monkey.x + 80, this.monkey.y + 35); // Point to monkey's mouth
-                this.ctx.lineTo(adjustedBubbleX, bubbleY + 50); // Left side of bubble
-                this.ctx.closePath();
+                this.ctx.roundRect(adjustedBubbleX + 3, bubbleY + 3, bubbleWidth, bubbleHeight, 12);
                 this.ctx.fill();
-                this.ctx.stroke();
                 
-                // Text inside speech bubble
+                // Text inside speech bubble - LARGER TEXT
                 this.ctx.fillStyle = '#8B4513';
-                this.ctx.font = 'bold 11px Comic Sans MS, cursive';
+                this.ctx.font = 'bold 16px Comic Sans MS, cursive'; // Bigger font
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
                 
                 // Multi-line text in bubble
-                this.ctx.fillText('🎉 CONGRATULATIONS! 🎉', adjustedBubbleX + bubbleWidth/2, bubbleY + 12);
-                this.ctx.font = 'bold 10px Comic Sans MS, cursive';
-                this.ctx.fillText(`You collected $${this.totalMoney}! 💰`, adjustedBubbleX + bubbleWidth/2, bubbleY + 25);
-                this.ctx.font = 'bold 9px Comic Sans MS, cursive';
-                this.ctx.fillText('Put this money in Cash App', adjustedBubbleX + bubbleWidth/2, bubbleY + 38);
-                this.ctx.fillText('and buy Bitcoin! 🚀', adjustedBubbleX + bubbleWidth/2, bubbleY + 50);
+                this.ctx.fillText('🎉 CONGRATULATIONS! 🎉', adjustedBubbleX + bubbleWidth/2, bubbleY + 15);
+                this.ctx.font = 'bold 14px Comic Sans MS, cursive'; // Bigger font
+                this.ctx.fillText(`You collected $${this.totalMoney}! 💰`, adjustedBubbleX + bubbleWidth/2, bubbleY + 32);
+                this.ctx.font = 'bold 12px Comic Sans MS, cursive'; // Bigger font
+                this.ctx.fillText('Put this money in Cash App', adjustedBubbleX + bubbleWidth/2, bubbleY + 50);
+                this.ctx.fillText('and buy Bitcoin! 🚀', adjustedBubbleX + bubbleWidth/2, bubbleY + 68);
                 
                 this.ctx.restore();
             }
             
             drawEndingMonkey() {
-                const monkey = this.monkey;
-                const scale = 2; // Make monkey bigger for the ending
+                // Position monkey to the left of the giant banana for better visibility
+                const monkey = { x: 200, y: 400 };
+                const danceOffset = Math.sin(this.animationTime * 0.2) * 15;
+                const armWave = Math.sin(this.animationTime * 0.3) * 25;
+                const legBounce = Math.abs(Math.sin(this.animationTime * 0.4)) * 10;
                 
-                // Draw tail first (behind everything) - scaled position
-                this.drawMonkeyTail(monkey.x, monkey.y);
+                // Draw tail first (behind everything) - MOVES WITH BODY and stays connected
+                this.drawMonkeyTail(monkey.x + danceOffset, monkey.y);
                 
-                // Save context and scale up
-                this.ctx.save();
-                this.ctx.translate(monkey.x + 50, monkey.y + 60);
-                this.ctx.scale(scale, scale);
-                this.ctx.translate(-50, -60);
-                
-                // Big ears (draw first so they're behind the head)
+                // Big ears (draw first so they're behind the head) - ATTACHED to head with danceOffset
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.arc(15, 30, 18, 0, Math.PI * 2); // Left ear
-                this.ctx.arc(85, 30, 18, 0, Math.PI * 2); // Right ear
+                this.ctx.arc(monkey.x + 15 + danceOffset, monkey.y + 30, 18, 0, Math.PI * 2); // Left ear - moves with head
+                this.ctx.arc(monkey.x + 85 + danceOffset, monkey.y + 30, 18, 0, Math.PI * 2); // Right ear - moves with head
                 this.ctx.fill();
                 
-                // Inner ears (pink)
+                // Inner ears (pink) - ATTACHED to head with danceOffset
                 this.ctx.fillStyle = '#FFB6C1';
                 this.ctx.beginPath();
-                this.ctx.arc(15, 30, 12, 0, Math.PI * 2); // Left inner ear
-                this.ctx.arc(85, 30, 12, 0, Math.PI * 2); // Right inner ear
+                this.ctx.arc(monkey.x + 15 + danceOffset, monkey.y + 30, 12, 0, Math.PI * 2); // Left inner ear - moves with head
+                this.ctx.arc(monkey.x + 85 + danceOffset, monkey.y + 30, 12, 0, Math.PI * 2); // Right inner ear - moves with head
                 this.ctx.fill();
                 
-                // Body (more monkey-like)
+                // Body (swaying with dance)
                 this.ctx.fillStyle = '#8B4513';
                 this.ctx.beginPath();
-                this.ctx.ellipse(50, 70, 35, 45, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 50 + danceOffset, monkey.y + 70, 35, 45, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 
                 // Chest (lighter color)
                 this.ctx.fillStyle = '#DEB887';
                 this.ctx.beginPath();
-                this.ctx.ellipse(50, 75, 20, 30, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 50 + danceOffset, monkey.y + 75, 20, 30, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                // Head (larger and more rounded)
+                // Head (swaying with joy)
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.arc(50, 35, 30, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 50 + danceOffset, monkey.y + 35, 30, 0, Math.PI * 2);
                 this.ctx.fill();
                 
                 // Muzzle
                 this.ctx.fillStyle = '#DEB887';
                 this.ctx.beginPath();
-                this.ctx.ellipse(50, 45, 15, 12, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 50 + danceOffset, monkey.y + 45, 15, 12, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 
                 // Nostrils
                 this.ctx.fillStyle = 'black';
                 this.ctx.beginPath();
-                this.ctx.arc(47, 42, 1.5, 0, Math.PI * 2);
-                this.ctx.arc(53, 42, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 47 + danceOffset, monkey.y + 42, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 53 + danceOffset, monkey.y + 42, 1.5, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                // Eyes - winking animation during phase 1
+                // Eyes (happy and excited)
                 this.ctx.fillStyle = 'white';
                 this.ctx.beginPath();
-                this.ctx.arc(42, 30, 6, 0, Math.PI * 2); // Left eye (always open)
-                if (this.cashAppPhase !== 1) {
-                    this.ctx.arc(58, 30, 6, 0, Math.PI * 2); // Right eye (winks during phase 1)
-                }
+                this.ctx.arc(monkey.x + 42 + danceOffset, monkey.y + 30, 8, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58 + danceOffset, monkey.y + 30, 8, 0, Math.PI * 2);
                 this.ctx.fill();
                 
                 this.ctx.fillStyle = 'black';
                 this.ctx.beginPath();
-                this.ctx.arc(43, 30, 3, 0, Math.PI * 2); // Left pupil
-                if (this.cashAppPhase !== 1) {
-                    this.ctx.arc(57, 30, 3, 0, Math.PI * 2); // Right pupil (winks during phase 1)
-                }
+                this.ctx.arc(monkey.x + 43 + danceOffset, monkey.y + 30, 4, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 57 + danceOffset, monkey.y + 30, 4, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                // Eye highlights
+                // Eye highlights (sparkling with joy)
                 this.ctx.fillStyle = 'white';
                 this.ctx.beginPath();
-                this.ctx.arc(44, 29, 1, 0, Math.PI * 2); // Left highlight
-                if (this.cashAppPhase !== 1) {
-                    this.ctx.arc(58, 29, 1, 0, Math.PI * 2); // Right highlight (winks during phase 1)
-                }
+                this.ctx.arc(monkey.x + 44 + danceOffset, monkey.y + 29, 2, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 58 + danceOffset, monkey.y + 29, 2, 0, Math.PI * 2);
                 this.ctx.fill();
-                
-                // Winking eye (curved line when closed)
-                if (this.cashAppPhase === 1) {
-                    this.ctx.strokeStyle = 'black';
-                    this.ctx.lineWidth = 3;
-                    this.ctx.beginPath();
-                    this.ctx.arc(58, 30, 6, 0.2, Math.PI - 0.2);
-                    this.ctx.stroke();
-                }
                 
                 // Big happy smile
                 this.ctx.strokeStyle = 'black';
                 this.ctx.lineWidth = 3;
                 this.ctx.beginPath();
-                this.ctx.arc(50, 48, 12, 0, Math.PI);
+                this.ctx.arc(monkey.x + 50 + danceOffset, monkey.y + 48, 12, 0, Math.PI);
                 this.ctx.stroke();
                 
-                // Arms (left arm holding phone, right arm relaxed)
+                // Dancing arms (left arm holding phone, right arm celebrating)
                 this.ctx.fillStyle = '#8B4513';
                 this.ctx.strokeStyle = '#654321';
                 this.ctx.lineWidth = 8;
                 
-                // Left arm (holding phone)
+                // Left arm (holding phone up in celebration - waving) - starts from body
                 this.ctx.beginPath();
-                this.ctx.moveTo(20, 60);
-                this.ctx.quadraticCurveTo(5, 75, -10, 85);
+                this.ctx.moveTo(monkey.x + 20 + danceOffset, monkey.y + 60);
+                this.ctx.quadraticCurveTo(monkey.x + 5 + danceOffset + armWave, monkey.y + 40, monkey.x + 10 + danceOffset + armWave, monkey.y + 20);
                 this.ctx.stroke();
                 
-                // Right arm (relaxed)
+                // Right arm (also celebrating - waving up) - starts from body
                 this.ctx.beginPath();
-                this.ctx.moveTo(80, 60);
-                this.ctx.lineTo(90, 90);
+                this.ctx.moveTo(monkey.x + 80 + danceOffset, monkey.y + 60);
+                this.ctx.quadraticCurveTo(monkey.x + 95 + danceOffset - armWave, monkey.y + 40, monkey.x + 90 + danceOffset - armWave, monkey.y + 20);
                 this.ctx.stroke();
                 
-                // Left hand holding phone
+                // Left hand holding phone (moves with arm wave and body)
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.arc(-10, 85, 8, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 10 + danceOffset + armWave, monkey.y + 20, 10, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                // Right hand (relaxed)
+                // Phone in left hand (dancing with the monkey) - ONLY ONE PHONE, moves with body and arm
+                this.drawPhoneWithCashApp(monkey.x + 5 + danceOffset + armWave, monkey.y + 15);
+                
+                // Right celebrating hand (moves with body and arm)
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.arc(90, 90, 8, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 90 + danceOffset - armWave, monkey.y + 20, 10, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                this.ctx.restore();
-                
-                // Phone in left hand (outside of scaled context)
-                this.drawPhoneWithCashApp(monkey.x - 20, monkey.y + 110);
-                
-                // Continue with legs (back in scaled context)
-                this.ctx.save();
-                this.ctx.translate(monkey.x + 50, monkey.y + 60);
-                this.ctx.scale(scale, scale);
-                this.ctx.translate(-50, -60);
-                
-                // Legs
+                // Dancing legs (bouncing) - BACK TO ORIGINAL VICTORY DANCE LEGS
                 this.ctx.fillStyle = '#8B4513';
                 this.ctx.strokeStyle = '#654321';
                 this.ctx.lineWidth = 6;
                 this.ctx.beginPath();
-                this.ctx.moveTo(35, 110);
-                this.ctx.lineTo(30, 140);
-                this.ctx.moveTo(65, 110);
-                this.ctx.lineTo(70, 140);
+                this.ctx.moveTo(monkey.x + 35 + danceOffset, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 30 + danceOffset, monkey.y + 135 + legBounce);
+                this.ctx.moveTo(monkey.x + 65 + danceOffset, monkey.y + 110);
+                this.ctx.lineTo(monkey.x + 70 + danceOffset, monkey.y + 135 + legBounce);
                 this.ctx.stroke();
                 
-                // Feet
+                // Dancing feet - BACK TO ORIGINAL VICTORY DANCE FEET
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.ellipse(30, 145, 12, 6, 0, 0, Math.PI * 2);
-                this.ctx.ellipse(70, 145, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 30 + danceOffset, monkey.y + 140 + legBounce, 15, 8, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 70 + danceOffset, monkey.y + 140 + legBounce, 15, 8, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                this.ctx.restore();
+                // Draw party hat DIRECTLY on top of monkey's head - STAYS ON HEAD during dance
+                this.drawPartyHat(monkey.x + 50 + danceOffset, monkey.y + 5); // Hat positioned directly on top of dancing head
             }
             
             startWinkAnimation() {
@@ -1711,9 +1920,62 @@
                 }
             }
             
+            spawnDollarRain() {
+                // No small dollar rain - user prefers only big green dollar bills
+                // This function is kept for compatibility but does nothing
+            }
+            
+            updateDollarRain() {
+                // Update continuous dollar rain animation
+                for (let i = this.dollarRain.length - 1; i >= 0; i--) {
+                    const dollar = this.dollarRain[i];
+                    dollar.y += dollar.speed;
+                    dollar.rotation += dollar.rotationSpeed;
+                    dollar.life--;
+                    
+                    // Remove if off screen or life expired
+                    if (dollar.y > this.canvas.height + 50 || dollar.life <= 0) {
+                        this.dollarRain.splice(i, 1);
+                    }
+                }
+            }
+            
+            drawDollarRain() {
+                // Draw continuous dollar rain animation
+                this.dollarRain.forEach(dollar => {
+                    this.ctx.save();
+                    this.ctx.globalAlpha = dollar.opacity;
+                    this.ctx.translate(dollar.x + dollar.width/2, dollar.y + dollar.height/2);
+                    this.ctx.rotate(dollar.rotation);
+                    
+                    // Dollar bill main body (smaller than game dollars)
+                    this.ctx.fillStyle = '#85BB65'; // Dollar bill green
+                    this.ctx.strokeStyle = '#228B22';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(-dollar.width/2, -dollar.height/2, dollar.width, dollar.height, 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Dollar sign
+                    this.ctx.fillStyle = '#006400';
+                    this.ctx.font = 'bold 8px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText('$', 0, 0);
+                    
+                    this.ctx.restore();
+                });
+            }
+            
             drawVictorySequence() {
                 // Draw trees
                 this.drawTrees();
+                
+                // Draw raining bananas during victory dance (phase 4)
+                if (this.victoryPhase === 4) {
+                    this.drawBananas(); // Draw the raining bananas
+                }
                 
                 // Draw monkey in victory sequence
                 if (this.victoryPhase === 4) {
@@ -1762,8 +2024,8 @@
                     this.ctx.restore();
                 }
                 
-                // Bananas hanging by leaves from tree 1
-                this.drawHangingBananas(167, 300, 4, 1);
+                // Bananas hanging by leaves from tree 1 - BIGGER
+                this.drawHangingBananas(167, 300, 4, 2.5);
                 
                 // Tree 2 - Middle banana tree with bananas hanging by leaves
                 this.ctx.fillStyle = '#654321';
@@ -1796,8 +2058,8 @@
                     this.ctx.restore();
                 }
                 
-                // Bananas hanging by leaves from tree 2
-                this.drawHangingBananas(370, 280, 5, 1.2);
+                // Bananas hanging by leaves from tree 2 - BIGGER
+                this.drawHangingBananas(370, 280, 5, 2.8);
                 
                 // Tree 3 - Final banana tree (with GIANT bananas)
                 this.ctx.fillStyle = '#654321';
@@ -1830,10 +2092,8 @@
                     this.ctx.restore();
                 }
                 
-                // GIANT bananas hanging from tree 3 (much bigger!)
-                if (this.victoryPhase >= 3) {
-                    this.drawHangingBananas(602, 260, 3, 3.5); // GIANT bananas!
-                }
+                // GIANT bananas hanging from tree 3 (much bigger!) - ALWAYS VISIBLE
+                this.drawHangingBananas(602, 260, 3, 3.5); // GIANT bananas!
             }
             
             drawHangingBananas(x, y, count, scale) {
@@ -2156,8 +2416,8 @@
                 const armWave = Math.sin(this.animationTime * 0.3) * 25;
                 const legBounce = Math.abs(Math.sin(this.animationTime * 0.4)) * 10;
                 
-                // Draw tail first (behind everything) - like the start monkey
-                this.drawMonkeyTail(monkey.x, monkey.y);
+                // Draw tail first (behind everything) - MOVES WITH BODY and stays connected
+                this.drawMonkeyTail(monkey.x + danceOffset, monkey.y);
                 
                 // Big ears (draw first so they're behind the head) - ATTACHED to head with danceOffset
                 this.ctx.fillStyle = '#CD853F';
@@ -2231,47 +2491,58 @@
                 this.ctx.arc(monkey.x + 50 + danceOffset, monkey.y + 48, 12, 0, Math.PI);
                 this.ctx.stroke();
                 
-                // Dancing arms (waving up and celebrating)
+                // Dancing arms (left arm holding phone, right arm celebrating)
                 this.ctx.fillStyle = '#8B4513';
                 this.ctx.strokeStyle = '#654321';
                 this.ctx.lineWidth = 8;
                 
-                // Left arm (waving up)
+                // Left arm (holding phone up in celebration - waving) - starts from body
                 this.ctx.beginPath();
                 this.ctx.moveTo(monkey.x + 20 + danceOffset, monkey.y + 60);
-                this.ctx.quadraticCurveTo(monkey.x + 5 + armWave, monkey.y + 40, monkey.x + 10 + armWave, monkey.y + 20);
+                this.ctx.quadraticCurveTo(monkey.x + 5 + danceOffset + armWave, monkey.y + 40, monkey.x + 10 + danceOffset + armWave, monkey.y + 20);
                 this.ctx.stroke();
                 
-                // Right arm (waving up)  
+                // Right arm (also celebrating - waving up) - starts from body
                 this.ctx.beginPath();
                 this.ctx.moveTo(monkey.x + 80 + danceOffset, monkey.y + 60);
-                this.ctx.quadraticCurveTo(monkey.x + 95 - armWave, monkey.y + 40, monkey.x + 90 - armWave, monkey.y + 20);
+                this.ctx.quadraticCurveTo(monkey.x + 95 + danceOffset - armWave, monkey.y + 40, monkey.x + 90 + danceOffset - armWave, monkey.y + 20);
                 this.ctx.stroke();
                 
-                // Celebrating hands
+                // Left hand holding phone (moves with arm wave and body)
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.arc(monkey.x + 10 + armWave, monkey.y + 20, 10, 0, Math.PI * 2);
-                this.ctx.arc(monkey.x + 90 - armWave, monkey.y + 20, 10, 0, Math.PI * 2);
+                this.ctx.arc(monkey.x + 10 + danceOffset + armWave, monkey.y + 20, 10, 0, Math.PI * 2);
                 this.ctx.fill();
                 
-                // Dancing legs (bouncing)
+                // Phone in left hand (dancing with the monkey) - ONLY ONE PHONE, moves with body and arm
+                this.drawPhoneWithCashApp(monkey.x + 5 + danceOffset + armWave, monkey.y + 15);
+                
+                // Right celebrating hand (moves with body and arm)
+                this.ctx.fillStyle = '#CD853F';
+                this.ctx.beginPath();
+                this.ctx.arc(monkey.x + 90 + danceOffset - armWave, monkey.y + 20, 10, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Dancing legs (bouncing) - BACK TO ORIGINAL VICTORY DANCE LEGS
                 this.ctx.fillStyle = '#8B4513';
                 this.ctx.strokeStyle = '#654321';
                 this.ctx.lineWidth = 6;
                 this.ctx.beginPath();
                 this.ctx.moveTo(monkey.x + 35 + danceOffset, monkey.y + 110);
-                this.ctx.lineTo(monkey.x + 30 + danceOffset, monkey.y + 140 - legBounce);
+                this.ctx.lineTo(monkey.x + 30 + danceOffset, monkey.y + 135 + legBounce);
                 this.ctx.moveTo(monkey.x + 65 + danceOffset, monkey.y + 110);
-                this.ctx.lineTo(monkey.x + 70 + danceOffset, monkey.y + 140 - legBounce);
+                this.ctx.lineTo(monkey.x + 70 + danceOffset, monkey.y + 135 + legBounce);
                 this.ctx.stroke();
                 
-                // Dancing feet
+                // Dancing feet - BACK TO ORIGINAL VICTORY DANCE FEET
                 this.ctx.fillStyle = '#CD853F';
                 this.ctx.beginPath();
-                this.ctx.ellipse(monkey.x + 30 + danceOffset, monkey.y + 145 - legBounce, 12, 6, 0, 0, Math.PI * 2);
-                this.ctx.ellipse(monkey.x + 70 + danceOffset, monkey.y + 145 - legBounce, 12, 6, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 30 + danceOffset, monkey.y + 140 + legBounce, 15, 8, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(monkey.x + 70 + danceOffset, monkey.y + 140 + legBounce, 15, 8, 0, 0, Math.PI * 2);
                 this.ctx.fill();
+                
+                // Draw party hat DIRECTLY on top of monkey's head - STAYS ON HEAD during dance
+                this.drawPartyHat(monkey.x + 50 + danceOffset, monkey.y + 5); // Hat positioned directly on top of dancing head
             }
             
             drawGiantBanana() {
@@ -2352,8 +2623,7 @@
                     this.ctx.fill();
                 }
                 
-                // Draw Cash App phone on the ground closer to the monkey
-                this.drawPhoneWithCashApp(bananaX - 80, bananaY + 60);
+                // NO phone on the ground - only the one in monkey's hand
             }
             
             gameLoop() {
@@ -2369,6 +2639,9 @@
                 } else if (this.gameMode === 'cashapp') {
                     // Handle cash app ending sequence
                     this.updateCashAppSequence();
+                    this.spawnDollarRain(); // Add dollar rain during cashapp ending
+                    this.updateDollarRain(); // Update dollar rain animation
+                    this.drawDollarRain(); // Draw dollar rain behind everything
                     this.drawCashAppSequence();
                 } else if (this.gameMode === 'winking') {
                     // Handle winking animation sequence
@@ -2379,9 +2652,11 @@
                     // Update game objects
                     this.spawnBanana();
                     this.spawnDollarBill();
+                    this.spawnDollarRain(); // Continuous dollar rain animation
                     this.updateBasket();
                     this.updateBananas();
                     this.updateDollarBills();
+                    this.updateDollarRain(); // Update dollar rain animation
                     this.updateParticles();
                     
                     // Update expression timer
@@ -2393,6 +2668,7 @@
                     }
                     
                     // Draw game objects
+                    this.drawDollarRain(); // Draw dollar rain behind everything
                     this.drawMonkey();
                     this.drawBasket();
                     this.drawBananas();
@@ -2400,6 +2676,9 @@
                     this.drawParticles();
                 } else {
                     // Draw static game objects
+                    this.spawnDollarRain(); // Dollar rain even when not playing
+                    this.updateDollarRain();
+                    this.drawDollarRain(); // Draw dollar rain behind everything
                     this.drawMonkey();
                     this.drawBasket();
                     this.drawBananas();
